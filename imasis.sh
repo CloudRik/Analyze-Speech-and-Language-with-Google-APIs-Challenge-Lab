@@ -35,85 +35,59 @@ print_completion() {
 
 print_welcome
 
-# ========================================================
-# TASK 1: CREATE API KEY (WITH TARGET RESTRICTION)
-# ========================================================
-echo "${MAGENTA_TEXT}${BOLD_TEXT}🔑 TASK 1: Creating API Key...${RESET_FORMAT}"
-
-gcloud services enable language.googleapis.com speech.googleapis.com --quiet
-
-# Try creating API key with target restriction
-gcloud alpha services api-keys create \
-    --display-name="imasis-key" \
-    --api-target=service=language.googleapis.com \
-    --quiet 2>/dev/null || true
-
-# Fetch Key String
-export API_KEY=$(gcloud alpha services api-keys list --format="value(keyString)" 2>/dev/null | head -n 1)
-
-if [ -z "$API_KEY" ]; then
-    # Fallback to credentials list
-    export API_KEY=$(gcloud services api-keys list --format="value(keyString)" 2>/dev/null | head -n 1)
-fi
-
-echo "${GREEN_TEXT}✓ API Key setup complete: ${API_KEY}${RESET_FORMAT}"
+# User input for API Key (Foolproof method for Video Tutorial)
+echo "${YELLOW_TEXT}${BOLD_TEXT}Please enter your Google Cloud API Key below:${RESET_FORMAT}"
+read -p "${CYAN_TEXT}${BOLD_TEXT}API Key: ${RESET_FORMAT}" API_KEY_INPUT
+export API_KEY="$API_KEY_INPUT"
+echo "${GREEN_TEXT}✓ API Key received!${RESET_FORMAT}"
 echo
 
-# ========================================================
-# TASK 2, 3, 4: EXECUTE ENTIRE LOGIC INSIDE VM VIA SSH
-# ========================================================
+# Locate VM Zone
 echo "${MAGENTA_TEXT}${BOLD_TEXT}🚀 Locating VM Instance (lab-vm)...${RESET_FORMAT}"
-
 ZONE=$(gcloud compute instances list --filter="name=lab-vm" --format="value(zone)" 2>/dev/null)
 if [ -z "$ZONE" ]; then
     ZONE=$(gcloud compute instances list --format="value(zone)" | head -n 1)
 fi
 
 echo "${CYAN_TEXT}VM Zone identified: ${ZONE}${RESET_FORMAT}"
-echo "${YELLOW_TEXT}${BOLD_TEXT}Connecting and running all tasks inside lab-vm...${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}Running tasks inside lab-vm SSH session...${RESET_FORMAT}"
 
-# Send script to VM and execute inside VM context
-gcloud compute ssh lab-vm --zone=$ZONE --quiet --command="cat << 'INNER_SCRIPT' > run_tasks.sh
-#!/bin/bash
-export API_KEY='${API_KEY}'
-
-# Install dependencies inside VM
-sudo apt-get update -y >/dev/null 2>&1
-sudo apt-get install -y python3-pip >/dev/null 2>&1
-pip3 install --upgrade google-cloud-language --quiet 2>/dev/null
+# Pipe execution directly into SSH to force VM shell execution context
+gcloud compute ssh lab-vm --zone=$ZONE --quiet -- << EOF
+export API_KEY="${API_KEY}"
 
 # TASK 2: Entity Analysis
-cat > nl_request.json <<EOF
+cat > nl_request.json << 'JSON_EOF'
 {
-  \"document\": {
-    \"type\": \"PLAIN_TEXT\",
-    \"content\": \"With approximately 8.2 million people residing in Boston, the capital city of Massachusetts is one of the largest in the United States.\"
+  "document": {
+    "type": "PLAIN_TEXT",
+    "content": "With approximately 8.2 million people residing in Boston, the capital city of Massachusetts is one of the largest in the United States."
   },
-  \"encodingType\": \"UTF8\"
+  "encodingType": "UTF8"
 }
-EOF
+JSON_EOF
 
-curl \"https://language.googleapis.com/v1/documents:analyzeEntities?key=\${API_KEY}\" \
-  -s -X POST -H \"Content-Type: application/json\" --data-binary @nl_request.json > nl_response.json
+curl "https://language.googleapis.com/v1/documents:analyzeEntities?key=\${API_KEY}" \
+  -s -X POST -H "Content-Type: application/json" --data-binary @nl_request.json > nl_response.json
 
 # TASK 3: Speech Analysis
-cat > speech_request.json <<EOF
+cat > speech_request.json << 'JSON_EOF'
 {
-  \"config\": {
-    \"encoding\": \"FLAC\",
-    \"languageCode\": \"en-US\"
+  "config": {
+    "encoding": "FLAC",
+    "languageCode": "en-US"
   },
-  \"audio\": {
-    \"uri\": \"gs://cloud-samples-tests/speech/brooklyn.flac\"
+  "audio": {
+    "uri": "gs://cloud-samples-tests/speech/brooklyn.flac"
   }
 }
-EOF
+JSON_EOF
 
-curl -s -X POST -H \"Content-Type: application/json\" --data-binary @speech_request.json \
-  \"https://speech.googleapis.com/v1/speech:recognize?key=\${API_KEY}\" > speech_response.json
+curl -s -X POST -H "Content-Type: application/json" --data-binary @speech_request.json \
+  "https://speech.googleapis.com/v1/speech:recognize?key=\${API_KEY}" > speech_response.json
 
 # TASK 4: Sentiment Analysis
-cat > sentiment_analysis.py <<EOF
+cat > sentiment_analysis.py << 'PY_EOF'
 import argparse
 from google.cloud import language_v1
 
@@ -123,9 +97,9 @@ def print_result(annotations):
 
     for index, sentence in enumerate(annotations.sentences):
         sentence_sentiment = sentence.sentiment.score
-        print(f\"Sentence {index} sentiment score: {sentence_sentiment:.2f}\")
+        print(f"Sentence {index} sentiment score: {sentence_sentiment:.2f}")
 
-    print(f\"\nOverall Sentiment: Score {score:.2f}, Magnitude {magnitude:.2f}\")
+    print(f"\nOverall Sentiment: Score {score:.2f}, Magnitude {magnitude:.2f}")
     return 0
 
 def analyze(movie_review_filename):
@@ -138,29 +112,27 @@ def analyze(movie_review_filename):
         content=content, 
         type_=language_v1.Document.Type.PLAIN_TEXT
     )
-    annotations = client.analyze_sentiment(request={\"document\": document})
+    annotations = client.analyze_sentiment(request={"document": document})
     print_result(annotations)
 
-if __name__ == \"__main__\":
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=\"Perform sentiment analysis on movie reviews\",
+        description="Perform sentiment analysis on movie reviews",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        \"movie_review_filename\",
-        help=\"Path to the movie review text file\"
+        "movie_review_filename",
+        help="Path to the movie review text file"
     )
     args = parser.parse_args()
     analyze(args.movie_review_filename)
-EOF
+PY_EOF
 
 gsutil cp gs://cloud-samples-tests/natural-language/sentiment-samples.tgz .
 gunzip -f sentiment-samples.tgz
 tar -xvf sentiment-samples.tar
 
 python3 sentiment_analysis.py reviews/bladerunner-pos.txt
-INNER_SCRIPT
-bash run_tasks.sh
-"
+EOF
 
 print_completion
