@@ -35,9 +35,8 @@ print_completion() {
 
 print_welcome
 
-# User input for API Key (Foolproof method for Video Tutorial)
-echo "${YELLOW_TEXT}${BOLD_TEXT}Please enter your Google Cloud API Key below:${RESET_FORMAT}"
-read -p "${CYAN_TEXT}${BOLD_TEXT}API Key: ${RESET_FORMAT}" API_KEY_INPUT
+# Ask API Key interactively with fallback
+read -p "${CYAN_TEXT}${BOLD_TEXT}Enter your Google Cloud API Key: ${RESET_FORMAT}" API_KEY_INPUT
 export API_KEY="$API_KEY_INPUT"
 echo "${GREEN_TEXT}✓ API Key received!${RESET_FORMAT}"
 echo
@@ -50,14 +49,14 @@ if [ -z "$ZONE" ]; then
 fi
 
 echo "${CYAN_TEXT}VM Zone identified: ${ZONE}${RESET_FORMAT}"
-echo "${YELLOW_TEXT}${BOLD_TEXT}Running tasks inside lab-vm SSH session...${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}Preparing setup payload for lab-vm...${RESET_FORMAT}"
 
-# Pipe execution directly into SSH to force VM shell execution context
-gcloud compute ssh lab-vm --zone=$ZONE --quiet -- << EOF
-export API_KEY="${API_KEY}"
+# Generate execution file locally
+cat << 'EOF' > vm_exec.sh
+#!/bin/bash
+export API_KEY="$1"
 
-# TASK 2: Entity Analysis
-cat > nl_request.json << 'JSON_EOF'
+cat > nl_request.json <<'JSON_EOF'
 {
   "document": {
     "type": "PLAIN_TEXT",
@@ -67,11 +66,10 @@ cat > nl_request.json << 'JSON_EOF'
 }
 JSON_EOF
 
-curl "https://language.googleapis.com/v1/documents:analyzeEntities?key=\${API_KEY}" \
+curl "https://language.googleapis.com/v1/documents:analyzeEntities?key=${API_KEY}" \
   -s -X POST -H "Content-Type: application/json" --data-binary @nl_request.json > nl_response.json
 
-# TASK 3: Speech Analysis
-cat > speech_request.json << 'JSON_EOF'
+cat > speech_request.json <<'JSON_EOF'
 {
   "config": {
     "encoding": "FLAC",
@@ -84,10 +82,9 @@ cat > speech_request.json << 'JSON_EOF'
 JSON_EOF
 
 curl -s -X POST -H "Content-Type: application/json" --data-binary @speech_request.json \
-  "https://speech.googleapis.com/v1/speech:recognize?key=\${API_KEY}" > speech_response.json
+  "https://speech.googleapis.com/v1/speech:recognize?key=${API_KEY}" > speech_response.json
 
-# TASK 4: Sentiment Analysis
-cat > sentiment_analysis.py << 'PY_EOF'
+cat > sentiment_analysis.py <<'PY_EOF'
 import argparse
 from google.cloud import language_v1
 
@@ -134,5 +131,14 @@ tar -xvf sentiment-samples.tar
 
 python3 sentiment_analysis.py reviews/bladerunner-pos.txt
 EOF
+
+echo "${YELLOW_TEXT}${BOLD_TEXT}Transferring and executing commands inside lab-vm...${RESET_FORMAT}"
+
+# Send execution script to VM and execute securely
+gcloud compute scp vm_exec.sh lab-vm:~/vm_exec.sh --zone=$ZONE --quiet
+gcloud compute ssh lab-vm --zone=$ZONE --quiet --command="bash ~/vm_exec.sh '$API_KEY'"
+
+# Cleanup local script
+rm -f vm_exec.sh
 
 print_completion
