@@ -42,11 +42,11 @@ export API_KEY="$API_KEY_INPUT"
 echo "${GREEN_TEXT}✓ API Key set!${RESET_FORMAT}"
 echo
 
-# Force Install dependencies globally and in user mode
+# Force Install dependencies globally via APT + PIP force
 echo "${MAGENTA_TEXT}${BOLD_TEXT}📦 Installing dependencies...${RESET_FORMAT}"
 sudo apt-get update -y >/dev/null 2>&1
 sudo apt-get install -y python3-pip python3-google-cloud-language >/dev/null 2>&1
-sudo pip3 install google-cloud-language --break-system-packages >/dev/null 2>&1 || pip3 install google-cloud-language >/dev/null 2>&1
+sudo pip3 install google-cloud-language --break-system-packages >/dev/null 2>&1
 
 # Task 2: Entity Analysis Request
 echo "${MAGENTA_TEXT}${BOLD_TEXT}📝 Task 2: Running Entity Analysis...${RESET_FORMAT}"
