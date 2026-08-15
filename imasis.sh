@@ -35,18 +35,18 @@ print_completion() {
 
 print_welcome
 
-# Install python dependencies inside VM
-echo "${MAGENTA_TEXT}${BOLD_TEXT}📦 Installing dependencies...${RESET_FORMAT}"
-sudo apt-get update -y >/dev/null 2>&1
-sudo apt-get install -y python3-pip >/dev/null 2>&1
-pip3 install --upgrade google-cloud-language --quiet 2>/dev/null
-
 # Task 1: API Key Prompt
 echo "${YELLOW_TEXT}${BOLD_TEXT}Please enter your Google Cloud API Key below:${RESET_FORMAT}"
 read -p "${CYAN_TEXT}${BOLD_TEXT}API Key: ${RESET_FORMAT}" API_KEY_INPUT
 export API_KEY="$API_KEY_INPUT"
 echo "${GREEN_TEXT}✓ API Key set!${RESET_FORMAT}"
 echo
+
+# Force Install dependencies globally and in user mode
+echo "${MAGENTA_TEXT}${BOLD_TEXT}📦 Installing dependencies...${RESET_FORMAT}"
+sudo apt-get update -y >/dev/null 2>&1
+sudo apt-get install -y python3-pip python3-google-cloud-language >/dev/null 2>&1
+sudo pip3 install google-cloud-language --break-system-packages >/dev/null 2>&1 || pip3 install google-cloud-language >/dev/null 2>&1
 
 # Task 2: Entity Analysis Request
 echo "${MAGENTA_TEXT}${BOLD_TEXT}📝 Task 2: Running Entity Analysis...${RESET_FORMAT}"
