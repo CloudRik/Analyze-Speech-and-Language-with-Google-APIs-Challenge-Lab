@@ -35,65 +35,54 @@ print_completion() {
 
 print_welcome
 
-# Enable APIs
-gcloud services enable language.googleapis.com speech.googleapis.com --quiet
+# Install python dependencies inside VM
+echo "${MAGENTA_TEXT}${BOLD_TEXT}📦 Installing dependencies...${RESET_FORMAT}"
+sudo apt-get update -y >/dev/null 2>&1
+sudo apt-get install -y python3-pip >/dev/null 2>&1
+pip3 install --upgrade google-cloud-language --quiet 2>/dev/null
 
-# Auto fetch existing API Key created manually or via UI
-export API_KEY=$(gcloud alpha services api-keys list --format="value(keyString)" 2>/dev/null | head -n 1)
-
-if [ -z "$API_KEY" ]; then
-    export API_KEY=$(gcloud services api-keys list --format="value(keyString)" 2>/dev/null | head -n 1)
-fi
-
-echo "${GREEN_TEXT}✓ Auto-Detected API Key: ${API_KEY}${RESET_FORMAT}"
+# Task 1: API Key Prompt
+echo "${YELLOW_TEXT}${BOLD_TEXT}Please enter your Google Cloud API Key below:${RESET_FORMAT}"
+read -p "${CYAN_TEXT}${BOLD_TEXT}API Key: ${RESET_FORMAT}" API_KEY_INPUT
+export API_KEY="$API_KEY_INPUT"
+echo "${GREEN_TEXT}✓ API Key set!${RESET_FORMAT}"
 echo
 
-# Locate VM Zone
-echo "${MAGENTA_TEXT}${BOLD_TEXT}🚀 Locating VM Instance (lab-vm)...${RESET_FORMAT}"
-ZONE=$(gcloud compute instances list --filter="name=lab-vm" --format="value(zone)" 2>/dev/null)
-if [ -z "$ZONE" ]; then
-    ZONE=$(gcloud compute instances list --format="value(zone)" | head -n 1)
-fi
-
-echo "${CYAN_TEXT}VM Zone identified: ${ZONE}${RESET_FORMAT}"
-
-# Send execution script to VM and execute directly
-gcloud compute ssh lab-vm --zone=$ZONE --quiet --command="cat << 'EOF' > run.sh
-#!/bin/bash
-export API_KEY='${API_KEY}'
-
-# Task 2
-cat > nl_request.json <<'JSON_EOF'
+# Task 2: Entity Analysis Request
+echo "${MAGENTA_TEXT}${BOLD_TEXT}📝 Task 2: Running Entity Analysis...${RESET_FORMAT}"
+cat << 'JSON_EOF' > nl_request.json
 {
-  \"document\": {
-    \"type\": \"PLAIN_TEXT\",
-    \"content\": \"With approximately 8.2 million people residing in Boston, the capital city of Massachusetts is one of the largest in the United States.\"
+  "document": {
+    "type": "PLAIN_TEXT",
+    "content": "With approximately 8.2 million people residing in Boston, the capital city of Massachusetts is one of the largest in the United States."
   },
-  \"encodingType\": \"UTF8\"
+  "encodingType": "UTF8"
 }
 JSON_EOF
 
-curl \"https://language.googleapis.com/v1/documents:analyzeEntities?key=\${API_KEY}\" \
-  -s -X POST -H \"Content-Type: application/json\" --data-binary @nl_request.json > nl_response.json
+curl "https://language.googleapis.com/v1/documents:analyzeEntities?key=${API_KEY}" \
+  -s -X POST -H "Content-Type: application/json" --data-binary @nl_request.json > nl_response.json
 
-# Task 3
-cat > speech_request.json <<'JSON_EOF'
+# Task 3: Speech Analysis Request
+echo "${MAGENTA_TEXT}${BOLD_TEXT}🎙️ Task 3: Running Speech Analysis...${RESET_FORMAT}"
+cat << 'JSON_EOF' > speech_request.json
 {
-  \"config\": {
-    \"encoding\": \"FLAC\",
-    \"languageCode\": \"en-US\"
+  "config": {
+    "encoding": "FLAC",
+    "languageCode": "en-US"
   },
-  \"audio\": {
-    \"uri\": \"gs://cloud-samples-tests/speech/brooklyn.flac\"
+  "audio": {
+    "uri": "gs://cloud-samples-tests/speech/brooklyn.flac"
   }
 }
 JSON_EOF
 
-curl -s -X POST -H \"Content-Type: application/json\" --data-binary @speech_request.json \
-  \"https://speech.googleapis.com/v1/speech:recognize?key=\${API_KEY}\" > speech_response.json
+curl -s -X POST -H "Content-Type: application/json" --data-binary @speech_request.json \
+  "https://speech.googleapis.com/v1/speech:recognize?key=${API_KEY}" > speech_response.json
 
-# Task 4
-cat > sentiment_analysis.py <<'PY_EOF'
+# Task 4: Sentiment Analysis Request
+echo "${MAGENTA_TEXT}${BOLD_TEXT}📊 Task 4: Running Sentiment Analysis...${RESET_FORMAT}"
+cat << 'PY_EOF' > sentiment_analysis.py
 import argparse
 from google.cloud import language_v1
 
@@ -103,9 +92,9 @@ def print_result(annotations):
 
     for index, sentence in enumerate(annotations.sentences):
         sentence_sentiment = sentence.sentiment.score
-        print(f\"Sentence {index} sentiment score: {sentence_sentiment:.2f}\")
+        print(f"Sentence {index} sentiment score: {sentence_sentiment:.2f}")
 
-    print(f\"\nOverall Sentiment: Score {score:.2f}, Magnitude {magnitude:.2f}\")
+    print(f"\nOverall Sentiment: Score {score:.2f}, Magnitude {magnitude:.2f}")
     return 0
 
 def analyze(movie_review_filename):
@@ -118,28 +107,26 @@ def analyze(movie_review_filename):
         content=content, 
         type_=language_v1.Document.Type.PLAIN_TEXT
     )
-    annotations = client.analyze_sentiment(request={\"document\": document})
+    annotations = client.analyze_sentiment(request={"document": document})
     print_result(annotations)
 
-if __name__ == \"__main__\":
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=\"Perform sentiment analysis on movie reviews\",
+        description="Perform sentiment analysis on movie reviews",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        \"movie_review_filename\",
-        help=\"Path to the movie review text file\"
+        "movie_review_filename",
+        help="Path to the movie review text file"
     )
     args = parser.parse_args()
     analyze(args.movie_review_filename)
 PY_EOF
 
-gsutil cp gs://cloud-samples-tests/natural-language/sentiment-samples.tgz .
-gunzip -f sentiment-samples.tgz
-tar -xvf sentiment-samples.tar
+gsutil cp gs://cloud-samples-tests/natural-language/sentiment-samples.tgz . 2>/dev/null
+gunzip -f sentiment-samples.tgz 2>/dev/null
+tar -xvf sentiment-samples.tar 2>/dev/null
 
 python3 sentiment_analysis.py reviews/bladerunner-pos.txt
-EOF
-bash run.sh"
 
 print_completion
